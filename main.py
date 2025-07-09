@@ -10,7 +10,7 @@ import asyncpg
 TOKEN = os.getenv("DISCORD_TOKEN")
 CANAL_ID = 1391782013568290858
 ROLE_ID = "1391784968786808873"
-DB_URL = os.getenv("DATABASE_URL")  # Railway define essa variável automaticamente
+DB_URL = os.getenv("DATABASE_URL")
 
 URL = "https://animesbr.tv"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -18,16 +18,20 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 
+# Conecta ao PostgreSQL
 async def conectar_banco():
     return await asyncpg.connect(DB_URL)
 
+# Verifica se o link já foi postado
 async def episodio_ja_postado(conn, link):
     row = await conn.fetchrow("SELECT 1 FROM episodios_postados WHERE link = $1", link)
     return row is not None
 
+# Salva o link do episódio no banco
 async def salvar_episodio(conn, link):
     await conn.execute("INSERT INTO episodios_postados (link) VALUES ($1)", link)
 
+# Raspa os episódios mais recentes
 def get_ultimos_episodios(limit=5):
     r = requests.get(URL, headers=HEADERS)
     soup = BeautifulSoup(r.text, 'html.parser')
@@ -64,6 +68,7 @@ def get_ultimos_episodios(limit=5):
 
     return episodios
 
+# Loop principal que verifica e envia os episódios
 async def checar_novos_episodios():
     await client.wait_until_ready()
     canal = client.get_channel(CANAL_ID)
@@ -85,7 +90,6 @@ async def checar_novos_episodios():
                         text=f"Animesbr.tv • {ep['data']}",
                         icon_url="https://cdn.discordapp.com/emojis/1391789271471624233.webp?size=96&quality=lossless"
                     )
-
                     if ep['imagem']:
                         embed.set_thumbnail(url=ep['imagem'])
 
@@ -95,6 +99,7 @@ async def checar_novos_episodios():
                         allowed_mentions=discord.AllowedMentions(roles=True),
                         suppress_embeds=False
                     )
+
         except Exception as e:
             print("Erro ao buscar episódios:", e)
 
@@ -105,7 +110,7 @@ async def on_ready():
     print(f"Bot online como {client.user}")
     client.loop.create_task(checar_novos_episodios())
 
-# Flask server para manter Railway online (opcional)
+# Mantém Railway acordado
 app = Flask('')
 
 @app.route('/')
