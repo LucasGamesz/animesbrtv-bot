@@ -77,10 +77,12 @@ async def checar_novos_episodios():
     while not client.is_closed():
         try:
             episodios = get_ultimos_episodios()
+            
+            # Posta todos os episódios novos, do mais antigo para o mais recente
             for ep in reversed(episodios):
                 if ep["link"] and not await episodio_ja_postado(conn, ep["link"]):
                     await salvar_episodio(conn, ep["link"])
-
+            
                     embed = discord.Embed(
                         title=f"{ep['nome_anime']} - {ep['titulo_ep']}",
                         description=f"**Tipo:** {ep['qualidade']}\n[👉 Assistir online]({ep['link']})",
@@ -92,18 +94,17 @@ async def checar_novos_episodios():
                     )
                     if ep['imagem']:
                         embed.set_thumbnail(url=ep['imagem'])
-
+            
                     await canal.send(
                         content=f"<@&{ROLE_ID}>",
                         embed=embed,
                         allowed_mentions=discord.AllowedMentions(roles=True),
                         suppress_embeds=False
                     )
-
         except Exception as e:
             print("Erro ao buscar episódios:", e)
 
-        await asyncio.sleep(600)
+        await asyncio.sleep(300)
 
 @client.event
 async def on_ready():
