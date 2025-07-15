@@ -19,36 +19,38 @@ client  = discord.Client(intents=intents)
 
 # ────────── PostgreSQL helpers ──────────
 async def conectar_banco():
-    return await asyncpg.connect(DB_URL)
+    print("[DB] Conectando ao banco de dados...")
+    conn = await asyncpg.connect(DB_URL)
+    print("[DB] Conexão estabelecida com sucesso.")
+    return conn
 
 async def episodio_ja_postado(conn, link):
-    return await conn.fetchval(
-        "SELECT 1 FROM episodios_postados WHERE link = $1", link
-    ) is not None
+    registrado = await conn.fetchval("SELECT 1 FROM episodios_postados WHERE link = $1", link)
+    print(f"[DB] Episódio já registrado? {'✅' if registrado else '❌'} → {link}")
+    return registrado is not None
 
 async def salvar_episodio(conn, link):
-    await conn.execute(
-        "INSERT INTO episodios_postados (link) VALUES ($1)", link
-    )
+    print(f"[DB] Salvando episódio no banco: {link}")
+    await conn.execute("INSERT INTO episodios_postados (link) VALUES ($1)", link)
 
 # ────────── Scraper com timeout ──────────
 def get_ultimos_episodios(limit=5):
+    print(f"[{dt.datetime.now():%H:%M:%S}] Buscando HTML de {URL}")
     try:
-        r = requests.get(
-            URL,
-            headers=HEADERS,
-            timeout=15,                 # <- evita travar para sempre
-            verify=certifi.where()      # cadeia de certificados atual
-        )
+        r = requests.get(URL, headers=HEADERS, timeout=15, verify=certifi.where())
         r.raise_for_status()
     except (RequestException, Timeout) as e:
-        print(f"[{dt.datetime.now():%H:%M:%S}] Falha na requisição: {e}")
-        return []                       # retorna vazio → loop continua
+        print(f"[ERRO] Falha na requisição: {e}")
+        return []
 
+    print("[SCRAPER] HTML carregado com sucesso.")
     soup = BeautifulSoup(r.text, "html.parser")
     episodios = []
 
-    for artigo in soup.select('article.item.se.episodes')[:limit]:
+    artigos = soup.select('article.item.se.episodes')[:limit]
+    print(f"[SCRAPER] {len(artigos)} episódios encontrados.")
+
+    for artigo in artigos:
         data_div   = artigo.find('div', class_='data')
         a_tag      = data_div.find('h3').find('a') if data_div else None
         link       = a_tag['href'] if a_tag else None
@@ -75,20 +77,27 @@ def get_ultimos_episodios(limit=5):
             "data": data,
             "imagem": imagem_url
         })
+
     return episodios
 
 # ────────── Loop principal ──────────
 async def checar_novos_episodios():
     await client.wait_until_ready()
     canal = client.get_channel(CANAL_ID)
-    conn  = await conectar_banco()
+    if canal is None:
+        print(f"[ERRO] Canal com ID {CANAL_ID} não encontrado! Verifique permissões ou ID.")
+        return
+
+    conn = await conectar_banco()
 
     while not client.is_closed():
-        print(f"[{dt.datetime.now():%H:%M:%S}] Checando novos episódios...")
+        print(f"\n[{dt.datetime.now():%H:%M:%S}] 🔎 Checando novos episódios...")
         try:
             episodios = get_ultimos_episodios()
-            for ep in reversed(episodios):                # mais antigo → mais novo
+            for ep in reversed(episodios):
+                print(f"[BOT] Verificando episódio: {ep['nome_anime']} - {ep['titulo_ep']}")
                 if ep["link"] and not await episodio_ja_postado(conn, ep["link"]):
+                    print(f"[BOT] Novo episódio detectado! Link: {ep['link']}")
                     await salvar_episodio(conn, ep["link"])
 
                     embed = discord.Embed(
@@ -103,20 +112,27 @@ async def checar_novos_episodios():
                     if ep['imagem']:
                         embed.set_thumbnail(url=ep['imagem'])
 
-                    await canal.send(
-                        content=f"<@&{ROLE_ID}>",
-                        embed=embed,
-                        allowed_mentions=discord.AllowedMentions(roles=True),
-                        suppress_embeds=False
-                    )
+                    try:
+                        await canal.send(
+                            content=f"<@&{ROLE_ID}>",
+                            embed=embed,
+                            allowed_mentions=discord.AllowedMentions(roles=True),
+                            suppress_embeds=False
+                        )
+                        print(f"[DISCORD] ✅ Episódio enviado com sucesso para o canal.")
+                    except Exception as e:
+                        print(f"[DISCORD] ❌ Falha ao enviar para o canal: {e}")
+                else:
+                    print("[BOT] Episódio já havia sido postado ou link inválido.")
         except Exception as e:
-            print(f"[{dt.datetime.now():%H:%M:%S}] Erro inesperado: {e}")
+            print(f"[ERRO] Falha inesperada durante verificação: {e}")
 
-        await asyncio.sleep(300)  # 5 min
+        print(f"[{dt.datetime.now():%H:%M:%S}] 💤 Aguardando 5 minutos...")
+        await asyncio.sleep(300)
 
 @client.event
 async def on_ready():
-    print(f"Bot online como {client.user}")
+    print(f"[DISCORD] Bot online como {client.user}")
     client.loop.create_task(checar_novos_episodios())
 
 # ────────── keep‑alive (Railway) ──────────
