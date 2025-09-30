@@ -12,7 +12,7 @@ CANAL_ID  = 1391782013568290858
 ROLE_ID   = "1391784968786808873"
 DB_URL    = os.getenv("DATABASE_URL")
 
-URL     = "https://animesbr.tv"
+URL     = "https://animesbr.app"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 intents = discord.Intents.default()
